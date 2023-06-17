@@ -8,7 +8,7 @@ else
 
 endif
 
-server: main.cpp  server.cpp
+server: main.cpp  webserver.cpp ./timer/lst_timer.cpp config.cpp
 	$(CXX) -o server  $^ $(CXXFLAGS) -lpthread -lmysqlclient
 
 clean:
