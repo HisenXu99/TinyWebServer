@@ -182,7 +182,7 @@ void Utils::sig_handler(int sig)
     //为保证函数的可重入性，保留原来的errno
     int save_errno = errno;
     int msg = sig;
-    send(u_pipefd[1], (char *)&msg, 1, 0);
+    send(u_pipefd[1], (char *)&msg, 1, 0);     //作用是将一个字符型的消息通过管道的写端发送出去。 
     errno = save_errno;
 }
 
@@ -190,12 +190,12 @@ void Utils::sig_handler(int sig)
 void Utils::addsig(int sig, void(handler)(int), bool restart)
 {
     struct sigaction sa;
-    memset(&sa, '\0', sizeof(sa));
-    sa.sa_handler = handler;
+    memset(&sa, '\0', sizeof(sa));    //将sa的每个字符都是这为\0
+    sa.sa_handler = handler;          //设置处理函数
     if (restart)
         sa.sa_flags |= SA_RESTART;
-    sigfillset(&sa.sa_mask);
-    assert(sigaction(sig, &sa, NULL) != -1);
+    sigfillset(&sa.sa_mask);            //将sa的sa_mask成员设置为所有信号的集合
+    assert(sigaction(sig, &sa, NULL) != -1);    //sigaction的处理信息都存储在sa中
 }
 
 //定时处理任务，重新定时以不断触发SIGALRM信号

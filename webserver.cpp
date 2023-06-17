@@ -132,26 +132,26 @@ void WebServer::eventListen()
     ret = listen(m_listenfd, 5);
     assert(ret >= 0);
 
-    utils.init(TIMESLOT);
+    utils.init(TIMESLOT);       //init只设置TIMESLOT
 
     //epoll创建内核事件表
-    epoll_event events[MAX_EVENT_NUMBER];
+    //epoll_event events[MAX_EVENT_NUMBER];   //感觉这句话是多余的——debug
     m_epollfd = epoll_create(5);
     assert(m_epollfd != -1);
 
-    utils.addfd(m_epollfd, m_listenfd, false, m_LISTENTrigmode);
+    utils.addfd(m_epollfd, m_listenfd, false, m_LISTENTrigmode);    //注册监听套接字
     http_conn::m_epollfd = m_epollfd;
 
-    ret = socketpair(PF_UNIX, SOCK_STREAM, 0, m_pipefd);
+    ret = socketpair(PF_UNIX, SOCK_STREAM, 0, m_pipefd);     //创建套接字对,这些套接字在同一主机上的进程之间进行通信。socketpair函数创建的套接字对是全双工的，即两个套接字都可以读写数据。
     assert(ret != -1);
     utils.setnonblocking(m_pipefd[1]);
-    utils.addfd(m_epollfd, m_pipefd[0], false, 0);
+    utils.addfd(m_epollfd, m_pipefd[0], false, 0);          //m_pipefd[0]端口好注册进epoll，对SIGALRM和SIGTERM进行处理
 
-    utils.addsig(SIGPIPE, SIG_IGN);
-    utils.addsig(SIGALRM, utils.sig_handler, false);
-    utils.addsig(SIGTERM, utils.sig_handler, false);
+    utils.addsig(SIGPIPE, SIG_IGN);                         //管道破裂的信号，进程向一个已经关闭的管道写入数据时，内核会向该进程发送SIGPIPE信号，SIG_IGN表示忽略
+    utils.addsig(SIGALRM, utils.sig_handler, false);        //定时器到期信号
+    utils.addsig(SIGTERM, utils.sig_handler, false);        //SIGTERM是一个表示进程终止的信号，通常用于优雅地终止进程，以便在终止前进行必要的清理操作。
 
-    alarm(TIMESLOT);
+    alarm(TIMESLOT);    //5秒后由系统发送SIGALRM信号，
 
     //工具类,信号和描述符基础操作
     Utils::u_pipefd = m_pipefd;
@@ -186,7 +186,7 @@ void WebServer::adjust_timer(util_timer *timer)
     LOG_INFO("%s", "adjust timer once");
 }
 
-void WebServer::deal_timer(util_timer *timer, int sockfd)
+void WebServer::deal_timer(util_timer *timer, int sockfd)             //用来删除定时器
 {
     timer->cb_func(&users_timer[sockfd]);
     if (timer)
@@ -246,12 +246,12 @@ bool WebServer::dealwithsignal(bool &timeout, bool &stop_server)
     int ret = 0;
     int sig;
     char signals[1024];
-    ret = recv(m_pipefd[0], signals, sizeof(signals), 0);
-    if (ret == -1)
+    ret = recv(m_pipefd[0], signals, sizeof(signals), 0);    //通过管道获取信号，并且进行处理。
+    if (ret == -1)        //recv读取出错
     {
         return false;
     }
-    else if (ret == 0)
+    else if (ret == 0)   //另一端已经正常关闭
     {
         return false;
     }
@@ -268,7 +268,7 @@ bool WebServer::dealwithsignal(bool &timeout, bool &stop_server)
             }
             case SIGTERM:
             {
-                stop_server = true;
+                stop_server = true;                //若SIGTERM终止信号出现，关闭服务器
                 break;
             }
             }
@@ -331,7 +331,7 @@ void WebServer::dealwithread(int sockfd)
 void WebServer::dealwithwrite(int sockfd)
 {
     util_timer *timer = users_timer[sockfd].timer;
-    //reactor
+    //reactor     由工作线程进行读写的控制
     if (1 == m_actormodel)
     {
         if (timer)
@@ -357,7 +357,7 @@ void WebServer::dealwithwrite(int sockfd)
     }
     else
     {
-        //proactor
+        //proactor  由主线程进行读写的控制，工作线程只负责业务逻辑
         if (users[sockfd].write())
         {
             LOG_INFO("send data to the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
@@ -381,8 +381,8 @@ void WebServer::eventLoop()
 
     while (!stop_server)
     {
-        int number = epoll_wait(m_epollfd, events, MAX_EVENT_NUMBER, -1);
-        if (number < 0 && errno != EINTR)
+        int number = epoll_wait(m_epollfd, events, MAX_EVENT_NUMBER, -1);        //timeout设置为-1,一直等待事件的发生
+        if (number < 0 && errno != EINTR)                                      //number<0表示套接字发生错误，errno记录错误是什么，EINTR表示终端，就是时钟信号引起的那个，所以不退出程序
         {
             LOG_ERROR("%s", "epoll failure");
             break;
@@ -395,29 +395,29 @@ void WebServer::eventLoop()
             //处理新到的客户连接
             if (sockfd == m_listenfd)
             {
-                bool flag = dealclinetdata();
+                bool flag = dealclinetdata();                    //加入新的连接，并设置定时器
                 if (false == flag)
                     continue;
             }
-            else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
+            else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))              //如果套接字断连或半关闭或错误，就关闭连接，如果是m_listenfd发生这些事怎么办？？？这里为什么没调用close？？？
             {
                 //服务器端关闭连接，移除对应的定时器
                 util_timer *timer = users_timer[sockfd].timer;
                 deal_timer(timer, sockfd);
             }
             //处理信号
-            else if ((sockfd == m_pipefd[0]) && (events[i].events & EPOLLIN))
+            else if ((sockfd == m_pipefd[0]) && (events[i].events & EPOLLIN))         //管道有需要读取的数据
             {
                 bool flag = dealwithsignal(timeout, stop_server);
                 if (false == flag)
                     LOG_ERROR("%s", "dealclientdata failure");
             }
             //处理客户连接上接收到的数据
-            else if (events[i].events & EPOLLIN)
+            else if (events[i].events & EPOLLIN)           //需要读取数据           ——6.15  11：12
             {
                 dealwithread(sockfd);
             }
-            else if (events[i].events & EPOLLOUT)
+            else if (events[i].events & EPOLLOUT)           //缓冲区为空，可以发送数据
             {
                 dealwithwrite(sockfd);
             }

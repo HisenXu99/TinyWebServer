@@ -51,7 +51,7 @@ public:
     int m_close_log;
     int m_actormodel;
 
-    int m_pipefd[2];
+    int m_pipefd[2];        //套接字对的数组，用来进行进程间通信。
     int m_epollfd;
     http_conn *users;
 
@@ -76,7 +76,7 @@ public:
     int m_CONNTrigmode;
 
     //定时器相关
-    client_data *users_timer;
-    Utils utils;
+    client_data *users_timer;     //客户端的信息，包括地址，socket文件描述符，定时器
+    Utils utils;        //在这里实现了epoll的注册
 };
 #endif
